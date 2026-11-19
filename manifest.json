@@ -1,6 +1,6 @@
 {
-  "name": "Brian 的投研平台",
-  "short_name": "投研平台",
+  "name": "V2Free",
+  "short_name": "V2Free",
   "description": "持仓跟踪 · 机会发掘 · 全球市场 · 突发提醒",
   "start_url": "platform.html",
   "scope": ".",
