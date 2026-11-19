@@ -1423,7 +1423,21 @@ try {
 /* ---------- secid 工具 ---------- */
 function stockSecid(code) {
   if (!code || !/^\d{6}$/.test(String(code))) return null;
-  return (String(code)[0] === "6" ? "1." : "0.") + code;
+  const c = String(code);
+  if (/^11/.test(c)) return "1." + c;            // 沪市可转债 110/111/113/118
+  if (/^12/.test(c)) return "0." + c;            // 深市可转债 123/127/128
+  if (/^(400|420)/.test(c)) return "0." + c;     // 老三板/退市股（东财源，腾讯无）
+  return (c[0] === "6" ? "1." : "0.") + c;
+}
+function stockKind(code) {
+  const c = String(code || "");
+  if (/^11/.test(c) || /^12/.test(c)) return "bond";
+  if (/^(400|420)/.test(c)) return "old3";
+  return "stock";
+}
+function kindLabel(code) {
+  const k = stockKind(code);
+  return k === "bond" ? "可转债" : k === "old3" ? "老三板" : "A股";
 }
 function tencentKey(secid) {
   const m = secid.split(".");
@@ -1447,6 +1461,9 @@ function hiddenList() { try { return JSON.parse(localStorage.getItem("pp_hidden"
 /* 持仓股数/成本 本地编辑覆盖 */
 function holdEdit() { try { return JSON.parse(localStorage.getItem("pp_holdedit") || "{}"); } catch (e) { return {}; } }
 function saveHoldEdit(o) { try { localStorage.setItem("pp_holdedit", JSON.stringify(o)); } catch (e) {} }
+function holdAdd() { try { return JSON.parse(localStorage.getItem("pp_holdadd") || "[]"); } catch (e) { return []; } }
+function saveHoldAdd(l) { try { localStorage.setItem("pp_holdadd", JSON.stringify(l)); } catch (e) {} }
+function allHoldings() { return (DATA.holdings || []).concat(holdAdd()); }
 function effHold(h) {
   const o = (h.code && holdEdit()[h.code]) || {};
   return {
@@ -1469,6 +1486,43 @@ function wireHoldEdit() {
       toast("已保存 · 市值按实时价重算");
     });
   });
+  wireHoldings();
+}
+/* 添加持仓（支持 A股/可转债/老三板） */
+function wireHoldings() {
+  const f = document.getElementById("addhold-form");
+  const btn = document.getElementById("btn-addhold");
+  if (btn && f) {
+    btn.onclick = () => { f.style.display = f.style.display === "none" ? "block" : "none"; };
+    const cal = document.getElementById("ah-cancel");
+    if (cal) cal.onclick = () => { f.style.display = "none"; };
+    const sv = document.getElementById("ah-save");
+    if (sv) sv.onclick = () => {
+      const code = ((document.getElementById("ah-code").value || "") + "").trim();
+      const name = ((document.getElementById("ah-name").value || "") + "").trim() || code;
+      const shares = parseFloat(document.getElementById("ah-shares").value);
+      const cost = parseFloat(document.getElementById("ah-cost").value);
+      if (!/^\d{6}$/.test(code)) { toast("请输入 6 位数字代码"); return; }
+      if (!(shares > 0)) { toast("股数需大于 0"); return; }
+      if (holdAdd().find(x => x.code === code) || (DATA.holdings || []).find(x => x.code === code)) { toast("该代码已在持仓中"); return; }
+      const list = holdAdd();
+      list.push({ code: code, name: name, shares: shares, cost: cost > 0 ? cost : null, addedAt: new Date().toLocaleDateString("zh-CN"), market: kindLabel(code), mine: true });
+      saveHoldAdd(list);
+      f.style.display = "none";
+      ["ah-code", "ah-name", "ah-shares", "ah-cost"].forEach(id => { const e = document.getElementById(id); if (e) e.value = ""; });
+      renderAll();
+      toast("已添加 · " + kindLabel(code) + " 行情自动接入");
+    };
+  }
+  document.querySelectorAll("[data-delhold]").forEach(b => {
+    b.onclick = () => {
+      saveHoldAdd(holdAdd().filter(x => x.code !== b.dataset.delhold));
+      const o = holdEdit();
+      if (o[b.dataset.delhold]) { delete o[b.dataset.delhold]; saveHoldEdit(o); }
+      renderAll();
+      toast("已删除该持仓");
+    };
+  });
 }
 
 /* ---------- 渲染：持仓 ---------- */
@@ -1486,8 +1540,20 @@ function renderHoldings() {
       + '<div><i>可用资金</i><b>' + money(a.cash) + '</b></div>'
       + '</div></div>';
   }
-  html += '<h4 class="block-t">持仓明细（' + (DATA.holdings || []).length + ' 项）· 实时行情</h4><div class="card-grid">';
-  (DATA.holdings || []).forEach(h => {
+  const addList = holdAdd();
+  html += '<h4 class="block-t">持仓明细（' + ((DATA.holdings || []).length + addList.length) + ' 项）· 实时行情<button class="mini-btn" id="btn-addhold" style="float:right">＋ 添加持仓</button></h4>'
+    + '<div id="addhold-form" class="card" style="display:none">'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + '<input id="ah-code" class="hin" style="flex:1;min-width:110px" placeholder="6位代码" inputmode="numeric">'
+    + '<input id="ah-name" class="hin" style="flex:2;min-width:130px" placeholder="名称（可留空用代码）">'
+    + '<input id="ah-shares" class="hin" style="flex:1;min-width:90px" type="number" placeholder="股数" inputmode="numeric">'
+    + '<input id="ah-cost" class="hin" style="flex:1;min-width:90px" type="number" step="0.001" placeholder="成本价" inputmode="decimal">'
+    + '<button class="mini-btn" id="ah-save">保存</button><button class="mini-btn" id="ah-cancel">取消</button>'
+    + '</div>'
+    + '<div class="hint" style="margin-top:8px">支持：A股（60/00/30 开头）· 可转债（沪 11x / 深 12x）· 老三板退市股（400/420 开头，行情走东财源）。保存后市值按实时价自动计算。</div>'
+    + '</div><div class="card-grid">';
+  allHoldings().forEach(h => {
+    const added = h.mine === true;
     const secid = stockSecid(h.code);
     const eff = effHold(h);
     const ev = (h.events || []).map(e =>
@@ -1496,7 +1562,7 @@ function renderHoldings() {
       + '<span class="ev-text">' + esc(e.text || "") + '</span></div>').join("");
     html += '<div class="card">'
       + '<div class="sc-head"><div class="sc-name">' + esc(h.name)
-      + (h.code ? '<span class="mkt">' + esc(h.market) + '</span><span class="code">' + esc(h.code) + '</span>' : '<span class="code">非股票持仓</span>')
+      + (h.code ? '<span class="mkt">' + esc(h.market || kindLabel(h.code)) + '</span><span class="code">' + esc(h.code) + '</span>' : '<span class="code">非股票持仓</span>')
       + '</div><div class="sc-pnl ' + cls(h.pnlPct) + '"' + (secid ? ' data-live="hpnl:' + secid + '" data-cost="' + esc(eff.cost) + '" data-shares="' + esc(eff.shares) + '"' : "") + '>' + sign(h.pnl) + '<small> (' + sign(h.pnlPct) + '%)</small></div></div>'
       + '<div class="sc-price"><span class="now ' + cls(h.pnlPct) + '"' + (secid ? ' data-live="hprice:' + secid + '" data-cost="' + esc(eff.cost) + '"' : "") + '>' + v(h.current) + '</span>' + (secid ? '<span class="live-tag">实时</span>' : "") + '<span class="cost">成本 <input class="hin" data-edit="cost:' + esc(h.code || "") + '" type="number" step="0.001" inputmode="decimal" value="' + v(eff.cost) + '"' + (secid ? "" : " disabled") + '> · <input class="hin" data-edit="shares:' + esc(h.code || "") + '" type="number" step="100" inputmode="numeric" value="' + v(eff.shares) + '"' + (secid ? "" : " disabled") + '> 股</span></div>'
       + '<div class="sc-grid">'
@@ -1507,6 +1573,7 @@ function renderHoldings() {
       + '</div>'
       + (ev ? '<div class="sc-ev"><h4 class="block-t" style="margin:0 0 8px">公司大事 · 公告追踪</h4>' + ev + '</div>' : '')
       + (h.note ? '<div class="sc-note">💡 ' + esc(h.note) + '</div>' : '')
+      + (added ? '<div style="margin-top:8px"><button class="mini-btn" data-delhold="' + esc(h.code) + '">✕ 删除该持仓</button><span class="src" style="margin-left:8px">本机添加 · ' + esc(h.addedAt || "") + '</span></div>' : '')
       + '</div>';
   });
   return html;
@@ -2234,16 +2301,18 @@ function handleFiles(files) {
 /* ---------- 实时引擎（腾讯主源 + 东财补源） ---------- */
 const LIVEQ = {};
 let tCodes = [];  // [tencentKey, secid]
-let emList = [];  // secid
+let emList = [];  // secid（东财 ulist 小批量）
+let old3List = [];  // 老三板 secid（ulist 不支持，走 stock/get 单股）
 function rebuildCodeLists() {
   const set = new Set();
-  (DATA.holdings || []).forEach(h => { const s = stockSecid(h.code); if (s) set.add(s); });
+  allHoldings().forEach(h => { const s = stockSecid(h.code); if (s) set.add(s); });
   (DATA.watchlist || []).forEach(w => { const s = stockSecid(w.code); if (s) set.add(s); });
   myWatch().forEach(w => { const s = stockSecid(w.code) || w.secid; if (s) set.add(s); });
   (DATA.indices || []).forEach(i => { if (IDX_SECID[i.code]) set.add(IDX_SECID[i.code]); });
-  tCodes = []; emList = [];
+  tCodes = []; emList = []; old3List = [];
   set.forEach(secid => {
-    if (EM_ONLY.includes(secid)) emList.push(secid);
+    if (/^0\.4(00|20)\d{3}$/.test(secid)) old3List.push(secid);        // 老三板：ulist 返回空，走 stock/get
+    else if (EM_ONLY.includes(secid)) emList.push(secid);
     else { const tk = tencentKey(secid); if (tk) tCodes.push([tk, secid]); }
   });
 }
@@ -2287,6 +2356,14 @@ function pollEM() {
   (async () => {
     try {
       if (emList.length) await doBatch(emList);
+      for (const sec of old3List) {                      // 老三板单股报价（限流风险低，数量极少）
+        try {
+          const d = await jsonp("https://push2.eastmoney.com/api/qt/stock/get?fltt=2&fields=f43,f60&secid=" + sec);
+          const q = d && d.data;
+          if (q && typeof q.f43 === "number" && q.f43 > 0) LIVEQ[sec] = { price: q.f43, pct: (typeof q.f60 === "number" && q.f60 > 0) ? (q.f43 / q.f60 - 1) * 100 : 0 };
+        } catch (e) {}
+        await new Promise(r => setTimeout(r, 150));
+      }
       if (_emTick % 3 === 0) {
         for (const sec of FUT_SECIDS) {
           const d = await jsonp("https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=f2,f3&secids=" + sec);
@@ -2309,7 +2386,7 @@ function statusBadge(low, high, stop, cur) {
 /* ---------- 账户动态聚合：股数×实时价 ---------- */
 function holdingsAgg() {
   let mv = 0, cost = 0, dayPnl = 0;
-  (DATA.holdings || []).forEach(h => {
+  allHoldings().forEach(h => {
     const secid = stockSecid(h.code);
     const q = secid && LIVEQ[secid];
     const eff = effHold(h);
