@@ -186,6 +186,8 @@ canvas.spark.hidden { display: none; }
 .mood-bar { position: relative; height: 8px; border-radius: 5px; margin-top: 8px; background: linear-gradient(90deg, #a5d8ff, #69db7c, #ffec99, #ffc078, #ff8787); }
 .mood-bar u { position: absolute; top: -4px; width: 3px; height: 16px; border-radius: 2px; background: var(--ink); transform: translateX(-50%); box-shadow: 0 0 0 2px rgba(255,255,255,.65); }
 .mood-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--sub); margin-top: 5px; font-weight: 700; }
+.mood-parts { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 7px; font-size: 9.5px; color: var(--sub); font-weight: 600; }
+.mood-parts span { background: rgba(127,140,170,.12); border-radius: 6px; padding: 2px 7px; }
 /* v3.1 场外机会横滑卡片 */
 .hscroll { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; padding: 2px 2px 8px; }
 .hscroll .card { flex: 0 0 82%; max-width: 340px; margin-bottom: 0; scroll-snap-align: start; }
@@ -1542,7 +1544,9 @@ function holdEdit() { try { return JSON.parse(localStorage.getItem("pp_holdedit"
 function saveHoldEdit(o) { try { localStorage.setItem("pp_holdedit", JSON.stringify(o)); } catch (e) {} }
 function holdAdd() { try { return JSON.parse(localStorage.getItem("pp_holdadd") || "[]"); } catch (e) { return []; } }
 function saveHoldAdd(l) { try { localStorage.setItem("pp_holdadd", JSON.stringify(l)); } catch (e) {} }
-function allHoldings() { return (DATA.holdings || []).concat(holdAdd()); }
+function holdRemoved() { try { return JSON.parse(localStorage.getItem("pp_holdremove") || "[]"); } catch (e) { return []; } }
+function saveHoldRemoved(l) { try { localStorage.setItem("pp_holdremove", JSON.stringify(l)); } catch (e) {} }
+function allHoldings() { const rm = holdRemoved(); return (DATA.holdings || []).filter(h => !rm.includes(h.code)).concat(holdAdd()); }
 function effHold(h) {
   const o = (h.code && holdEdit()[h.code]) || {};
   return {
@@ -1563,6 +1567,15 @@ function wireHoldEdit() {
       saveHoldEdit(o);
       renderAll();
       toast("已保存 · 市值按实时价重算");
+    });
+  });
+  document.querySelectorAll("input[data-cash]").forEach(inp => {
+    inp.addEventListener("change", () => {
+      const val = parseFloat(inp.value);
+      if (!isFinite(val) || val < 0) { toast("请输入不小于 0 的金额"); return; }
+      try { localStorage.setItem("pp_cash", String(val)); } catch (e) {}
+      patchAccount();
+      toast("现金已入账 · 总资产 = 实时市值 + 现金");
     });
   });
   wireHoldings();
@@ -1591,17 +1604,47 @@ function wireHoldings() {
       ["ah-code", "ah-name", "ah-shares", "ah-cost"].forEach(id => { const e = document.getElementById(id); if (e) e.value = ""; });
       renderAll();
       toast("已添加 · " + kindLabel(code) + " 行情自动接入");
+      fetchNameFor(code);
     };
   }
   document.querySelectorAll("[data-delhold]").forEach(b => {
     b.onclick = () => {
-      saveHoldAdd(holdAdd().filter(x => x.code !== b.dataset.delhold));
+      const code = b.dataset.delhold;
+      if (holdAdd().find(x => x.code === code)) {
+        saveHoldAdd(holdAdd().filter(x => x.code !== code));
+        toast("已删除该持仓");
+      } else {
+        const rm = holdRemoved();
+        if (!rm.includes(code)) rm.push(code);
+        saveHoldRemoved(rm);
+        toast("已删除 " + code + "（默认持仓本地移除，可随时恢复）");
+      }
       const o = holdEdit();
-      if (o[b.dataset.delhold]) { delete o[b.dataset.delhold]; saveHoldEdit(o); }
+      if (o[code]) { delete o[code]; saveHoldEdit(o); }
       renderAll();
-      toast("已删除该持仓");
     };
   });
+  const rst = document.getElementById("btn-restore");
+  if (rst) rst.onclick = () => {
+    saveHoldRemoved([]);
+    renderAll();
+    toast("已恢复全部默认持仓");
+  };
+}
+/* 名称自动回填：保存后立即抓东财 f58 简称，补全 A股/可转债/老三板 */
+async function fetchNameFor(code) {
+  const sec = stockSecid(code);
+  if (!sec) return;
+  try {
+    const d = await jsonp("https://push2.eastmoney.com/api/qt/stock/get?fltt=2&fields=f43,f58,f60&secid=" + sec);
+    const q = d && d.data;
+    if (q && q.f58) {
+      const l = holdAdd();
+      let changed = false;
+      l.forEach(x => { if (x.code === code && (!x.name || x.name === x.code)) { x.name = q.f58; changed = true; } });
+      if (changed) { saveHoldAdd(l); renderAll(); toast("已自动补全名称：" + q.f58); }
+    }
+  } catch (e) {}
 }
 
 /* ---------- 渲染：持仓 ---------- */
@@ -1610,14 +1653,16 @@ function renderHoldings() {
   let html = secTitle("chart", "持仓总览", '股数×实时价 动态计算 · 快照 ' + esc(a.updatedAt || ""));
   if (a.totalAssets) {
     html += '<div class="acct-card">'
-      + '<div class="acct-top"><span>总资产（元）</span><span>实时市值 + 可用资金</span></div>'
+      + '<div class="acct-top"><span>总资产（元）</span><span>实时市值 + 可用现金</span></div>'
       + '<div class="acct-main" id="acct-assets">' + money(a.totalAssets) + '</div>'
       + '<div class="acct-grid">'
       + '<div><i>当日盈亏</i><b id="acct-daypnl" class="' + cls(a.dayPnl) + '">' + sign(a.dayPnl) + ' (' + sign(a.dayPnlPct) + '%)</b></div>'
       + '<div><i>持仓盈亏</i><b id="acct-pospnl" class="' + cls(a.positionPnl) + '">' + sign(a.positionPnl) + '</b></div>'
       + '<div><i>总市值</i><b id="acct-mv">' + money(a.marketValue) + '</b></div>'
-      + '<div><i>可用资金</i><b>' + money(a.cash) + '</b></div>'
-      + '</div></div>';
+      + '<div><i>可用现金</i><input class="hin" data-cash="1" type="number" step="0.01" inputmode="decimal" value="' + cashVal() + '" placeholder="输入现金"></div>'
+      + '</div>'
+      + '<div class="hint" style="margin-top:6px">新资金入账：直接在「可用现金」输入金额，总资产与持仓占比立即按 实时市值 + 现金 重算。</div>'
+      + '</div>';
   }
   const addList = holdAdd();
   html += '<h4 class="block-t"><span>持仓明细（' + ((DATA.holdings || []).length + addList.length) + ' 项）· 实时行情</span><button class="mini-btn" id="btn-addhold">＋ 添加持仓</button></h4>'
@@ -1629,7 +1674,9 @@ function renderHoldings() {
     + '<input id="ah-cost" class="hin" style="flex:1;min-width:90px" type="number" step="0.001" placeholder="成本价" inputmode="decimal">'
     + '<button class="mini-btn" id="ah-save">保存</button><button class="mini-btn" id="ah-cancel">取消</button>'
     + '</div>'
-    + '<div class="hint" style="margin-top:8px">支持：A股（60/00/30 开头）· 可转债（沪 11x / 深 12x）· 老三板退市股（400/420 开头，行情走东财源）。保存后市值按实时价自动计算。</div>'
+    + '<div class="hint" style="margin-top:8px">支持：A股（60/00/30 开头）· 可转债（沪 11x / 深 12x）· 老三板退市股（400/420 开头，行情走东财源）。保存后市值按实时价自动计算。'
+    + (holdRemoved().length ? ' <button class="mini-btn" id="btn-restore" style="margin-left:6px">↺ 恢复默认持仓（' + holdRemoved().length + '）</button>' : '')
+    + '</div>'
     + '</div><div class="card-grid">';
   allHoldings().forEach(h => {
     const added = h.mine === true;
@@ -1652,7 +1699,7 @@ function renderHoldings() {
       + '</div>'
       + (ev ? '<div class="sc-ev"><h4 class="block-t" style="margin:0 0 8px">公司大事 · 公告追踪</h4>' + ev + '</div>' : '')
       + (h.note ? '<div class="sc-note">💡 ' + esc(h.note) + '</div>' : '')
-      + (added ? '<div style="margin-top:8px"><button class="mini-btn" data-delhold="' + esc(h.code) + '">✕ 删除该持仓</button><span class="src" style="margin-left:8px">本机添加 · ' + esc(h.addedAt || "") + '</span></div>' : '')
+      + '<div style="margin-top:8px"><button class="mini-btn" data-delhold="' + esc(h.code) + '">✕ 删除</button><span class="src" style="margin-left:8px">' + (added ? '本机添加 · ' + esc(h.addedAt || "") : '默认持仓 · 删除仅本机生效，可恢复') + '</span></div>'
       + '</div>';
   });
   return html;
@@ -1722,10 +1769,17 @@ function taHTML(ta) {
   html += '<canvas class="spark" id="spark-' + esc(ta.key) + '" data-points="' + esc(ta.closes.join(",")) + '"></canvas>';
   html += '<canvas class="kline" id="kline-' + esc(ta.key) + '"></canvas>';
   const mood = moodInfo(ta.heat);
-  html += '<div class="mood-box"><div class="mood-head"><span class="mood-title">🌡️ 市场情绪（涨幅×换手×量比）</span>'
+  const hp = ta.heatParts || {};
+  html += '<div class="mood-box"><div class="mood-head"><span class="mood-title">🌡️ 市场情绪</span>'
     + '<b class="mood-val ' + mood.cls + '">' + mood.emoji + ' ' + mood.label + ' · ' + (ta.heat || 0) + '/100</b></div>'
     + '<div class="mood-bar"><u style="left:' + Math.max(2, Math.min(98, ta.heat || 0)) + '%"></u></div>'
-    + '<div class="mood-scale"><span>0 冰点</span><span>20 偏冷</span><span>40 中性</span><span>60 偏热</span><span>80 过热</span></div></div>';
+    + '<div class="mood-scale"><span>0 冰点</span><span>20 偏冷</span><span>40 中性</span><span>60 偏热</span><span>80 过热</span></div>'
+    + '<div class="mood-parts">'
+    + '<span>当日涨幅 ' + (isFinite(hp.pctv) ? sign(hp.pctv) : "—") + '% → ' + (hp.pct || 0) + '</span>'
+    + '<span>20日趋势 ' + (isFinite(hp.pct20) ? sign(hp.pct20) : "—") + '% → ' + (hp.trend || 0) + '</span>'
+    + '<span>换手 → ' + (hp.tor || 0) + '</span>'
+    + '<span>量比 → ' + (hp.vr || 0) + '</span>'
+    + '</div></div>';
   html += '<div class="ta-chips">' + ta.chips.map(c => '<span class="chip ' + esc(c.cls) + '">' + esc(c.text) + '</span>').join("")
     + (ta.divYield ? '<span class="chip good">股息率 ' + esc(ta.divYield) + '</span>' : '')
     + (ta.pePct != null ? '<span class="chip ' + (ta.pePct <= 30 ? "good" : ta.pePct >= 70 ? "bad" : "") + '">PE分位 ' + ta.pePct + '%</span>' : (ta.pe ? '<span class="chip">PE ' + ta.pe + '</span>' : ''))
@@ -1836,12 +1890,17 @@ function computeTA(key, secid, bars, curPrice) {
   else if (price < ma5[last] && price < ma10[last] && price < ma20[last]) chips.push({ text: "均线空头", cls: "bad" });
   if (volRatio > 1.5 && bars[last].close > bars[last].open) { score += 1; why.push("放量阳线（量比 " + volRatio.toFixed(1) + "），资金介入迹象"); chips.push({ text: "放量", cls: "hot" }); }
   else if (volRatio < 0.7) chips.push({ text: "缩量", cls: "" });
-  // 热度：量比/换手/涨幅加权（0-100）
+  // 热度：四个分项各自归一到 0-100 再加权（v3.2.1 校准：旧公式换手/量比权重失真，永远偏冷）
   const q = LIVEQ[secid];
   const tor = q && isFinite(q.tor) ? q.tor : 0;
-  const vrb = q && isFinite(q.vr) ? q.vr : volRatio;
+  const vrb = q && isFinite(q.vr) && q.vr > 0 ? q.vr : volRatio;
   const pctv = q && isFinite(q.pct) ? q.pct : (bars[last].close / bars[last - 1].close - 1) * 100;
-  const heat = Math.max(0, Math.min(100, Math.round(Math.abs(pctv) * 3 + tor * 6 + vrb * 10)));
+  const pct20 = closes[last - 20] > 0 ? (price / closes[last - 20] - 1) * 100 : 0;
+  const hPct = Math.min(100, Math.abs(pctv) * 8);            // 当日涨幅：±5% 满半，±10% 封顶
+  const hTrend = Math.min(100, Math.max(0, pct20) * 3);      // 20日趋势：累计涨 33% 封顶
+  const hTor = Math.min(100, tor * 12);                      // 换手率：8% 封顶
+  const hVr = Math.min(100, vrb * 40);                       // 量比：2.5 封顶
+  const heat = Math.max(0, Math.min(100, Math.round(hPct * 0.3 + hTrend * 0.25 + hTor * 0.25 + hVr * 0.2)));
   // 基本面参考：股息率 + 估值分位（来自东财 datacenter 每日入库）
   const meta = stockMeta(secid);
   const buyLow = Math.min(low20, ma20[last] != null ? ma20[last] * 0.99 : low20);
@@ -1863,7 +1922,7 @@ function computeTA(key, secid, bars, curPrice) {
     key, secid, score, label, level, schema: TA_SCHEMA,
     buyLow, buyHigh, stopLoss, sell1, sell2, support: low20, resistance: high20,
     boll: { up: bollUp, mid: mean, low: bollLow },
-    heat, divYield: meta.div, pePct: meta.pePct, pbPct: meta.pbPct, pe: meta.pe,
+    heat, heatParts: { pct: Math.round(hPct), trend: Math.round(hTrend), tor: Math.round(hTor), vr: Math.round(hVr), pctv: pctv, pct20: pct20 }, divYield: meta.div, pePct: meta.pePct, pbPct: meta.pbPct, pe: meta.pe,
     chips, why: why.slice(0, 4), closes: closes.slice(-60),
     bars: bars.slice(-60).map(b => [b.open, b.close, b.low, b.high, b.volume])
   };
@@ -1878,7 +1937,7 @@ function stockMeta(secid) {
   if (it) out.div = it.dividendYield || it.divYield || it.dividend || null;
   return out;
 }
-const TA_SCHEMA = 3;          // 缓存结构版本，旧结构直接作废
+const TA_SCHEMA = 4;          // 缓存结构版本，旧结构直接作废（v4: 热度分项校准）
 const TA_FRESH_MS = 30 * 60 * 1000;
 function taValid(ta) { return ta && ta.schema === TA_SCHEMA && Array.isArray(ta.closes) && ta.closes.length > 1 && ta.sell1 > 0; }
 function taCacheGet(key) {
@@ -2281,7 +2340,7 @@ function renderAll() {
   const hic = $("#hero-ic"); if (hic && !hic.firstChild) hic.innerHTML = ico("rocket");
   $("#main").innerHTML = (RENDERERS[active] || renderHoldings)();
   polishIcons($("#main"));
-  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.2";
+  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.2.1";
   const m = DATA.meta || {};
   $("#foot").textContent = m.disclaimer || "仅供参考，不构成投资建议。市场有风险，投资需谨慎。";
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.id === active));
@@ -2464,9 +2523,17 @@ function pollEM() {
       if (emList.length) await doBatch(emList);
       for (const sec of old3List) {                      // 老三板单股报价（限流风险低，数量极少）
         try {
-          const d = await jsonp("https://push2.eastmoney.com/api/qt/stock/get?fltt=2&fields=f43,f60&secid=" + sec);
+          const d = await jsonp("https://push2.eastmoney.com/api/qt/stock/get?fltt=2&fields=f43,f58,f60&secid=" + sec);
           const q = d && d.data;
-          if (q && typeof q.f43 === "number" && q.f43 > 0) LIVEQ[sec] = { price: q.f43, pct: (typeof q.f60 === "number" && q.f60 > 0) ? (q.f43 / q.f60 - 1) * 100 : 0 };
+          if (q && typeof q.f43 === "number" && q.f43 > 0) {
+            LIVEQ[sec] = { price: q.f43, pct: (typeof q.f60 === "number" && q.f60 > 0) ? (q.f43 / q.f60 - 1) * 100 : 0 };
+            if (q.f58) {                                 // f58 = 证券简称，回填本机添加的持仓名
+              let changed = false;
+              const l = holdAdd();
+              l.forEach(x => { if (stockSecid(x.code) === sec && (!x.name || x.name === x.code)) { x.name = q.f58; changed = true; } });
+              if (changed) { saveHoldAdd(l); renderAll(); }
+            }
+          }
         } catch (e) {}
         await new Promise(r => setTimeout(r, 150));
       }
@@ -2490,6 +2557,10 @@ function statusBadge(low, high, stop, cur) {
   return '<span class="badge far">偏离买点</span>';
 }
 /* ---------- 账户动态聚合：股数×实时价 ---------- */
+function cashVal() {   // 现金：本机输入优先，否则用存档快照
+  try { const c = parseFloat(localStorage.getItem("pp_cash")); if (isFinite(c) && c >= 0) return c; } catch (e) {}
+  return (DATA.account && DATA.account.cash) || 0;
+}
 function holdingsAgg() {
   let mv = 0, cost = 0, dayPnl = 0;
   allHoldings().forEach(h => {
@@ -2508,7 +2579,7 @@ function patchAccount() {
   const a = DATA.account || {};
   const g = holdingsAgg();
   if (!g.mv) return;
-  const assets = g.mv + (a.cash || 0);
+  const assets = g.mv + cashVal();
   const posPnl = g.mv - g.cost;
   const mvEl = document.getElementById("acct-mv");
   if (mvEl) mvEl.textContent = money(g.mv);
@@ -2586,6 +2657,55 @@ async function pollNews() {
   } catch (e) { /* 保留静态快讯 */ }
 }
 
+/* ---------- 今日荐股：前端直连东财龙虎榜（始终取最新交易日，不再依赖存档日期） ---------- */
+let _recsFetched = false;
+function jsonpEM(url) {   // datacenter-web 用 callback= 参数（&cb= 不生效）
+  return new Promise(resolve => {
+    const cb = "__emcb" + Date.now();
+    let done = false;
+    const fin = d => { if (!done) { done = true; resolve(d); try { delete window[cb]; } catch (e) {} try { s.remove(); } catch (e2) {} } };
+    const s = document.createElement("script");
+    window[cb] = fin;
+    s.src = url + "&callback=" + cb + "&_t=" + Date.now();
+    s.onerror = () => fin(null);
+    document.body.appendChild(s);
+    setTimeout(() => fin(null), 9000);
+  });
+}
+async function fetchRecs(manual) {
+  try {
+    const d = await jsonpEM("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_DAILYBILLBOARD_DETAILSNEW&columns=ALL&sortColumns=TRADE_DATE&sortTypes=-1&pageSize=120&pageNumber=1&source=WEB&client=WEB");
+    const rows = (d && d.result && d.result.data) || [];
+    if (!rows.length) throw new Error("empty");
+    const latest = (rows[0].TRADE_DATE || "").slice(0, 10);       // 接口按日期倒序，第一行即最新交易日
+    const day = rows.filter(r => (r.TRADE_DATE || "").slice(0, 10) === latest)
+      .sort((a, b) => (b.BILLBOARD_NET_AMT || 0) - (a.BILLBOARD_NET_AMT || 0));
+    const recs = [];
+    const seen = new Set();
+    for (const r of day) {
+      const code = r.SECURITY_CODE || "", name = r.SECURITY_NAME_ABBR || "";
+      const net = r.BILLBOARD_NET_AMT || 0;
+      if (seen.has(code) || /ST/i.test(name) || /^(4|8|9)/.test(code)) continue;
+      if (net <= 0) continue;
+      seen.add(code);
+      recs.push({ code, name, netBuy: Math.round(net / 1e8 * 100) / 100,
+        chg: Math.round((r.CHANGE_RATE || 0) * 100) / 100, tor: Math.round((r.TURNOVERRATE || 0) * 100) / 100,
+        close: r.CLOSE_PRICE, date: latest, why: r.EXPLANATION || "",
+        source: "东方财富龙虎榜（实时）", status: "游资/机构净买入活跃" });
+      if (recs.length >= 6) break;
+    }
+    if (!recs.length) throw new Error("no valid recs");
+    DATA.recommendations = recs;
+    DATA.meta = DATA.meta || {};
+    DATA.meta.recUpdatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+    _recsFetched = true;
+    if (active === "offsite") renderAll();
+    if (manual) toast("荐股已更新 · " + latest + " 龙虎榜");
+  } catch (e) {
+    if (manual) toast("荐股实时抓取失败，仍显示存档数据（" + ((DATA.recommendations || [])[0] || {}).date + "）");
+  }
+}
+
 /* ---------- 静态数据拉取（每日存档） ---------- */
 async function pull(manual) {
   if (!isHttp) { if (manual) toast("本地文件模式：行情与快讯仍实时，存档数据用内置快照"); return; }
@@ -2599,7 +2719,8 @@ async function pull(manual) {
     DATA = j;
     rebuildCodeLists();
     renderAll();
-    if (manual) toast("已刷新 · " + (j.meta.updatedAt || ""));
+    fetchRecs(manual);          // 刷新时同步抓最新龙虎榜荐股
+    if (manual) toast("已刷新 · " + (j.meta.updatedAt || "") + "，正在同步最新荐股…");
     else if (changed) toast("🔄 存档数据已更新 · " + (j.meta.updatedAt || ""));
   } catch (err) {
     if (manual) toast("刷新失败，仍显示当前数据");
@@ -2614,7 +2735,7 @@ renderAll();
 setInterval(pollTencent, 1000);
 setInterval(pollEM, 1000);
 setInterval(pollNews, 3000);
-pollTencent(); pollEM(); pollNews();
+pollTencent(); pollEM(); pollNews(); fetchRecs(false);
 window.addEventListener("resize", () => { if (active === "onsite") drawAllSparks(); });
 window.addEventListener("load", () => drawAllSparks());
 document.addEventListener("visibilitychange", () => { if (!document.hidden && active === "onsite") drawAllSparks(); });
