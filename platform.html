@@ -2043,7 +2043,7 @@ function loadScriptVar(url, varName) {
     s.onload = () => { s.remove(); resolve(window[varName]); };
     s.onerror = () => { s.remove(); reject(new Error("load fail")); };
     document.body.appendChild(s);
-    setTimeout(() => { try { s.remove(); } catch (e) {} reject(new Error("timeout")); }, 8000);
+    setTimeout(() => { try { s.remove(); } catch (e) {} reject(new Error("timeout")); }, 5000);
   });
 }
 async function fetchKline(secid) {
@@ -2055,8 +2055,10 @@ async function fetchKline(secid) {
   else if (mk === "116") tcode = "hk" + ("00000" + code).slice(-5);
   if (!tcode) return null;
   const vn = "tkl_" + code.replace(/[^\w]/g, "") + "_" + (Date.now() % 100000000);
-  // 主源走 proxy.finance.qq.com（ifzq.gtimg.cn 已被腾讯 WAF 拦截返回501，已移除省一次8s超时）
-  let d = await loadScriptVar("https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=" + tcode + ",day,,,150,qfq&_var=" + vn, vn);
+  // 主源走 proxy.finance.qq.com（ifzq.gtimg.cn 已被腾讯 WAF 拦截返回501，已移除）
+  // 关键：await 必须包 try/catch，否则主源超时会抛异常跳过东财兜底（v3.3.4 修复买点刷不出来）
+  let d = null;
+  try { d = await loadScriptVar("https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=" + tcode + ",day,,,150,qfq&_var=" + vn, vn); } catch (e) {}
   const node = d && d.data && d.data[tcode];
   const kl = node && (node.qfqday || node.day);
   if (kl && kl.length) return kl.map(f => ({ date: f[0], open: +f[1], close: +f[2], high: +f[3], low: +f[4], volume: +f[5] }));
@@ -2127,12 +2129,75 @@ function drawSpark(key) {
   } catch (e) { /* 绘图异常不阻塞页面 */ }
 }
 function drawAllSparks() { requestAnimationFrame(() => document.querySelectorAll("canvas.spark").forEach(c => { const key = c.id.replace("spark-", ""); drawSpark(key); const k = document.getElementById("kline-" + key); if (k && k.classList.contains("on")) drawKline(key); })); }
-/* K线图：前复权日K蜡烛 + MA5/10/20 + 成交量 */
+/* ---------- 图表窗口视图 + 双指缩放/平移（v3.3.4） ---------- */
+function clampWin(wv) {
+  const span = wv.i1 - wv.i0;
+  if (span >= wv.total) { wv.i0 = 0; wv.i1 = wv.total; return; }
+  if (wv.i0 < 0) { wv.i0 = 0; wv.i1 = span; }
+  if (wv.i1 > wv.total) { wv.i1 = wv.total; wv.i0 = wv.total - span; }
+}
+function winOf(c, total, defCount) {
+  let wv = c._win;
+  if (!wv || wv.total !== total) {
+    const cnt = Math.min(total, defCount);
+    wv = c._win = { i0: total - cnt, i1: total, total };
+  }
+  return wv;
+}
+function attachChartGestures(c, redraw) {
+  if (c._gest) return;
+  c._gest = true;
+  c.style.touchAction = "pan-y";                 // 竖向滚动还给页面，横向留给我们
+  const dist2 = t => Math.abs(t[0].clientX - t[1].clientX) || 1;
+  let mode = null, startD = 0, startMid = 0, lastX = 0;
+  const rect = () => c.getBoundingClientRect();
+  c.addEventListener("touchstart", e => {
+    if (e.touches.length >= 2) { mode = "pinch"; startD = dist2(e.touches); startMid = (e.touches[0].clientX + e.touches[1].clientX) / 2; }
+    else { mode = "pan"; lastX = e.touches[0].clientX; }
+  }, { passive: true });
+  c.addEventListener("touchmove", e => {
+    const wv = c._win; if (!wv) return;
+    if (mode === "pinch" && e.touches.length >= 2) {
+      const r = rect(), span = wv.i1 - wv.i0;
+      const d = dist2(e.touches), mid = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const a = Math.min(1, Math.max(0, (startMid - r.left) / r.width));
+      const anchor = wv.i0 + a * span;
+      const newSpan = Math.min(wv.total, Math.max(12, span * startD / d));
+      wv.i0 = anchor - a * newSpan; wv.i1 = wv.i0 + newSpan;
+      clampWin(wv);
+      startD = d; startMid = mid;
+      redraw(); e.preventDefault();
+    } else if (mode === "pan" && e.touches.length === 1) {
+      const r = rect(), dx = e.touches[0].clientX - lastX; lastX = e.touches[0].clientX;
+      const db = dx / r.width * (wv.i1 - wv.i0);
+      wv.i0 -= db; wv.i1 -= db; clampWin(wv);
+      redraw(); e.preventDefault();
+    }
+  }, { passive: false });
+  c.addEventListener("touchend", e => {
+    if (e.touches.length === 0) mode = null;
+    else if (e.touches.length === 1) { mode = "pan"; lastX = e.touches[0].clientX; }
+  }, { passive: true });
+  c.addEventListener("wheel", e => {
+    const wv = c._win; if (!wv) return;
+    e.preventDefault();
+    const r = rect(), span = wv.i1 - wv.i0;
+    const a = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const anchor = wv.i0 + a * span;
+    const newSpan = Math.min(wv.total, Math.max(12, span * (e.deltaY > 0 ? 1.15 : 0.87)));
+    wv.i0 = anchor - a * newSpan; wv.i1 = wv.i0 + newSpan;
+    clampWin(wv);
+    redraw();
+  }, { passive: false });
+}
+/* K线图：前复权日K蜡烛 + MA5/10/20 + 成交量（支持窗口缩放） */
 function drawKline(key) {
   const c = document.getElementById("kline-" + key);
   const ta = TA_CACHE[key];
   if (!c || !ta || !Array.isArray(ta.bars) || ta.bars.length < 5) return;
-  drawKlineCanvas(c, ta.bars, ta.closes);
+  const redraw = () => drawKlineCanvas(c, ta.bars, ta.closes);
+  redraw();
+  attachChartGestures(c, redraw);
 }
 function drawKlineCanvas(c, bars, closes) {
   if (!c || !Array.isArray(bars) || bars.length < 5) return;
@@ -2145,16 +2210,21 @@ function drawKlineCanvas(c, bars, closes) {
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    const bars2 = bars;
+    const total = bars.length;
+    const wv = winOf(c, total, 60);
+    const i0 = Math.max(0, Math.floor(wv.i0)), i1 = Math.min(total, Math.ceil(wv.i1));
+    const bars2 = bars.slice(i0, i1);
     const n = bars2.length;
-    const closes2 = closes || bars2.map(b => b[1]);
+    if (n < 2) return;
+    const closes2 = closes || bars.map(b => b[1]);
+    const maOff = closes2.length - total;              // closes 与 bars 尾对齐时的绝对下标偏移
     const lows = Math.min(...bars2.map(b => b[2])), highs = Math.max(...bars2.map(b => b[3]));
     const span = (highs - lows) || 1;
     const priceH = Math.round(h * 0.72), volTop = priceH + 8, volH = h - volTop - 6;
     const maxVol = Math.max(...bars2.map(b => b[4])) || 1;
     const cw = (w - 8) / n;                        // 每根蜡烛宽度
     const py = p => 6 + (highs - p) / span * (priceH - 10);
-    const bw = Math.max(1.5, Math.min(cw * 0.62, 9));
+    const bw = Math.max(1, Math.min(cw * 0.62, 9));
     for (let i = 0; i < n; i++) {
       const [o, cl, lo, hi, vol] = bars2[i];
       const x = 4 + i * cw + cw / 2;
@@ -2168,15 +2238,17 @@ function drawKlineCanvas(c, bars, closes) {
       const vh = vol / maxVol * volH;
       ctx.fillRect(x - bw / 2, volTop + (volH - vh), bw, vh);
     }
-    // MA 线
+    // MA 线（按绝对下标取值，窗口平移不错位）
     const maDefs = [[5, "#f59f00"], [10, "#4dabf7"], [20, "#cc5de8"]];
     maDefs.forEach(([p, col]) => {
+      const maArr = sma(closes2, p);
       ctx.beginPath(); ctx.strokeStyle = col; ctx.lineWidth = 1.1;
       let started = false;
       for (let i = 0; i < n; i++) {
-        const idx = closes2.length - n + i;
-        const val = sma(closes2, p)[idx];
-        if (val == null) { continue; }
+        const idx = maOff + i0 + i;
+        if (idx < 0 || idx >= maArr.length) continue;
+        const val = maArr[idx];
+        if (val == null) continue;
         const x = 4 + i * cw + cw / 2, y = py(val);
         if (!isFinite(x) || !isFinite(y)) continue;
         started ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
@@ -2184,7 +2256,7 @@ function drawKlineCanvas(c, bars, closes) {
       }
       ctx.stroke();
     });
-    // 最新价标注
+    // 窗口末根收盘价标注
     const lastC = bars2[n - 1][1];
     ctx.fillStyle = lastC >= bars2[n - 1][0] ? "#e03131" : "#0ca678";
     ctx.font = "bold 10px -apple-system, sans-serif";
@@ -2192,18 +2264,40 @@ function drawKlineCanvas(c, bars, closes) {
     ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--sub") || "#7a8299";
     ctx.font = "9px -apple-system, sans-serif";
     ctx.fillText("MA5", w - 92, 12); ctx.fillText("MA10", w - 62, 12); ctx.fillText("MA20", w - 32, 12);
+    if (n < total) ctx.fillText(Math.round(n) + "/" + total + " 根 · 双指缩放", 4, h - 2);
   } catch (e) { /* 绘图异常不阻塞页面 */ }
 }
 /* ---------- 持仓卡图表：分时 / 日K ---------- */
 const HTREND = {}, HKLINE = {};
 async function fetchTrends(secid) {
   if (HTREND[secid] && Date.now() - HTREND[secid].ts < 120000) return HTREND[secid].d;
-  let j = await jsonp("https://push2his.eastmoney.com/api/qt/stock/trends2/sse?secid=" + secid + "&fields1=f1,f2,f3,f7&fields2=f51,f53&iscr=0&ndays=1");
-  if (!j) j = await jsonp("https://push2his.eastmoney.com/api/qt/stock/trends2/sse?secid=" + secid + "&fields1=f1,f2,f3,f7&fields2=f51,f53&iscr=0&ndays=1"); // 失败重试一次
-  const d = j && j.data;
-  if (!d || !Array.isArray(d.trends) || d.trends.length < 5) return null;
-  const out = { preClose: d.preClose, pts: d.trends.map(s => { const p = String(s).split(","); return +p[1]; }).filter(n => isFinite(n)) };
-  HTREND[secid] = { ts: Date.now(), d: out };
+  let out = null;
+  // 主源：东财 push2his trends2（JSONP）
+  try {
+    const j = await jsonp("https://push2his.eastmoney.com/api/qt/stock/trends2/sse?secid=" + secid + "&fields1=f1,f2,f3,f7&fields2=f51,f53&iscr=0&ndays=1");
+    const d = j && j.data;
+    if (d && Array.isArray(d.trends) && d.trends.length > 5)
+      out = { preClose: d.preClose, pts: d.trends.map(s => { const p = String(s).split(","); return +p[1]; }).filter(n => isFinite(n)) };
+  } catch (e) {}
+  // 兜底：新浪 1 分钟 K（jsonp_v2 变量赋值形态，loadScriptVar 可解析）
+  if (!out) {
+    try {
+      const dot = secid.indexOf("."), mk = secid.slice(0, dot), code = secid.slice(dot + 1);
+      const sym = (mk === "1" ? "sh" : mk === "0" ? "sz" : "") + code;
+      if (sym) {
+        const vn = "sinam_" + code + "_" + (Date.now() % 1e8);
+        const d2 = await loadScriptVar("https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20" + vn + "=/CN_MarketDataService.getKLineData?symbol=" + sym + "&scale=1&ma=no&datalen=240", vn);
+        if (Array.isArray(d2) && d2.length > 5) {
+          const pts = d2.map(x => +x.close).filter(n => isFinite(n));
+          if (pts.length) {
+            const q = LIVEQ[secid];
+            out = { preClose: (q && q.pre > 0) ? q.pre : pts[0], pts };
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  if (out) HTREND[secid] = { ts: Date.now(), d: out };
   return out;
 }
 function drawTrends(c, td) {
@@ -2217,11 +2311,15 @@ function drawTrends(c, td) {
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    const pts = td.pts, pre = td.preClose || pts[0];
+    const total = td.pts.length;
+    const wv = winOf(c, total, total);                       // 分时默认全量，可缩放
+    const i0 = Math.max(0, Math.floor(wv.i0)), i1 = Math.min(total, Math.ceil(wv.i1));
+    const pts = td.pts.slice(i0, i1);
+    const pre = td.preClose || td.pts[0];
     let lo = Math.min(...pts, pre), hi = Math.max(...pts, pre);
     const pad = (hi - lo) * 0.12 || 0.01; lo -= pad; hi += pad;
     const py = p => 6 + (hi - p) / (hi - lo) * (h - 20);
-    const px = i => 2 + i / (pts.length - 1) * (w - 4);
+    const px = i => 2 + (i0 + i) / (total - 1) * (w - 4);    // 绝对时间轴，平移时不错位
     // 昨收虚线
     ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--sub") || "#7a8299";
     ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
@@ -2244,6 +2342,11 @@ function drawTrends(c, td) {
     ctx.fillStyle = col; ctx.font = "bold 10px -apple-system, sans-serif";
     const ly = py(pts[pts.length - 1]);
     ctx.fillText(pts[pts.length - 1].toFixed(2), Math.min(w - 44, px(pts.length - 1) + 4), Math.max(12, ly - 4));
+    if (pts.length < total) {
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--sub") || "#7a8299";
+      ctx.font = "9px -apple-system, sans-serif";
+      ctx.fillText("双指缩放", 4, h - 2);
+    }
   } catch (e) { /* 绘图异常不阻塞页面 */ }
 }
 async function drawHoldChart(code, mode) {
@@ -2256,12 +2359,23 @@ async function drawHoldChart(code, mode) {
     if (!HKLINE[secid]) {
       const bars = await fetchKline(secid);
       if (!bars) { c.getContext("2d").clearRect(0, 0, c.width, c.height); return; }
-      HKLINE[secid] = { bars: bars.slice(-60).map(b => [b.open, b.close, b.low, b.high, b.volume]), closes: bars.slice(-60).map(b => b.close) };
+      HKLINE[secid] = { bars: bars.slice(-120).map(b => [b.open, b.close, b.low, b.high, b.volume]), closes: bars.slice(-120).map(b => b.close) };
     }
-    requestAnimationFrame(() => drawKlineCanvas(c, HKLINE[secid].bars, HKLINE[secid].closes));
+    const hk = HKLINE[secid];
+    const redraw = () => drawKlineCanvas(c, hk.bars, hk.closes);
+    requestAnimationFrame(() => { redraw(); attachChartGestures(c, redraw); });
   } else {
     const td = await fetchTrends(secid);
-    if (td) requestAnimationFrame(() => drawTrends(c, td));
+    if (td) requestAnimationFrame(() => { drawTrends(c, td); attachChartGestures(c, () => drawTrends(c, td)); });
+    else requestAnimationFrame(() => {            // 两个源都失败：给出可见提示而非空白
+      try {
+        c.width = 320; c.height = 60;
+        const ctx = c.getContext("2d");
+        ctx.font = "12px -apple-system, sans-serif";
+        ctx.fillStyle = "#a9b0bf";
+        ctx.fillText("分时数据获取失败，稍后再点一次", 8, 34);
+      } catch (e) {}
+    });
   }
 }
 /* 持仓图表按钮（事件委托） */
@@ -2328,9 +2442,14 @@ function renderOffsite() {
       + '<div class="m-src">' + (sec ? '<span class="live-tag">实时</span>' : esc(c.time || "") + " · ") + esc(c.unit || "") + '</div></div>';
   });
   html += '</div>';
-  // 今日荐股：龙虎榜游资/机构量化筛选
+  // 今日荐股：龙虎榜游资/机构量化筛选（龙虎榜当日数据收盘后才公布，标注最新交易日）
   const recs = DATA.recommendations || [];
-  html += secTitle("star", "今日荐股 · 龙虎榜量化筛选", (recs[0] ? esc(recs[0].date) : "每日 16:35 更新") + ' · 东方财富龙虎榜', ' style="margin-top:16px"');
+  const _today = new Date(); const todayStr = _today.getFullYear() + "-" + String(_today.getMonth() + 1).padStart(2, "0") + "-" + String(_today.getDate()).padStart(2, "0");
+  const recDate = recs[0] ? recs[0].date : "";
+  const recMeta = recDate
+    ? (recDate < todayStr ? "最新交易日 " + recDate + " · 今日收盘后自动更新" : recDate + " · 今日榜单")
+    : "每日 16:35 更新 · 东方财富龙虎榜";
+  html += secTitle("star", "今日荐股 · 龙虎榜量化筛选", recMeta, ' style="margin-top:16px"');
   if (recs.length) {
     html += '<div class="card-grid">';
     recs.forEach(r => {
@@ -2347,7 +2466,7 @@ function renderOffsite() {
         + '<div class="rec-why">🤖 量化筛选：' + esc(r.status || "") + '，龙虎榜净买入居前，短线资金关注度 ' + (r.tor > 8 ? "高" : r.tor > 3 ? "中" : "一般") + '</div>'
         + '</div>';
     });
-    html += '</div><div class="hint" style="margin-top:8px">⚠️ 荐股由龙虎榜净买入 + 换手率量化筛选生成（来源：东方财富，' + (recs[0] ? esc(recs[0].date) : "") + '），仅代表短线资金动向，不构成投资建议。</div>';
+    html += '</div><div class="hint" style="margin-top:8px">⚠️ 荐股由龙虎榜净买入 + 换手率量化筛选生成（来源：东方财富，最新交易日 ' + esc(recDate) + '；龙虎榜数据交易所收盘后才公布，今日榜单收盘后自动更新），仅代表短线资金动向，不构成投资建议。</div>';
   } else html += '<div class="empty">今日荐股生成中，每日 16:35 自动更新</div>';
   // 场外机会：横向手动滑动卡片
   const list = (DATA.opportunities || []);
@@ -2381,6 +2500,9 @@ function renderFeedInner() {
         + '<div class="feed-src"><span>来源：' + esc(n.source || "") + '</span></div></div>';
     });
     html += '<div class="feed-day">— 以下为每日整理的要闻存档 —</div>';
+  } else {
+    const fails = window.__newsFail || 0;
+    html += '<div class="feed-day" style="color:#c92a2a">' + (fails ? '⚠ 实时快讯暂时连不上，第 ' + fails + ' 次自动重试中…（下方为 11-19 存档要闻）' : '正在连接实时快讯…（下方为存档要闻）') + '</div>';
   }
   (DATA.news || []).forEach(n => {
     const imp = n.level === "重要" || n.level === "突发";
@@ -2482,7 +2604,7 @@ function renderAll() {
   const hic = $("#hero-ic"); if (hic && !hic.firstChild) hic.innerHTML = ico("rocket");
   $("#main").innerHTML = (RENDERERS[active] || renderHoldings)();
   polishIcons($("#main"));
-  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.3.3";
+  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.3.4";
   const m = DATA.meta || {};
   $("#foot").textContent = m.disclaimer || "仅供参考，不构成投资建议。市场有风险，投资需谨慎。";
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.id === active));
@@ -2788,6 +2910,11 @@ async function pollNews() {
     const r = await fetch("https://np-weblist.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102&sortEnd=&pageSize=20&device=web&req_trace=" + Date.now(), { cache: "no-store" });
     const j = await r.json();
     const list = (j.data && j.data.fastNewsList) || [];
+    if (!list.length) throw new Error("empty");
+    const sig = String(list[0].showTime || "") + "|" + (list[0].title || list[0].summary || "");
+    if (sig === window.__newsSig) return;          // 无新内容不重绘（避免打断滑动）
+    window.__newsSig = sig;
+    window.__newsFail = 0;
     window.__LIVE_NEWS = list.map(n => {
       const t = n.title || n.summary || "";
       return { time: String(n.showTime || "").slice(5, 16), title: t, source: "东方财富7×24", market: "快讯", imp: /突发|紧急|重磅|暴跌|暴涨|熔断|崩|踩踏|降准|加息|黑天鹅/.test(t) };
@@ -2796,7 +2923,15 @@ async function pollNews() {
     if (fb) fb.innerHTML = renderFeedInner();
     const hm = $("#news-meta");
     if (hm) hm.textContent = "实时快讯 " + window.__LIVE_NEWS.length + " 条 · 秒级滚动";
-  } catch (e) { /* 保留静态快讯 */ }
+  } catch (e) {
+    window.__newsFail = (window.__newsFail || 0) + 1;
+    if (window.__newsFail === 1 || window.__newsFail % 10 === 0) {   // 失败状态可见，不静默
+      const hm = $("#news-meta");
+      if (hm) hm.textContent = "实时快讯连接失败 · 第 " + window.__newsFail + " 次重试中";
+      const fb = $("#feed-box");
+      if (fb) fb.innerHTML = renderFeedInner();
+    }
+  }
 }
 
 /* ---------- 今日荐股：前端直连东财龙虎榜（始终取最新交易日，不再依赖存档日期） ---------- */
