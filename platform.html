@@ -1650,7 +1650,7 @@ async function fetchNameFor(code) {
 /* ---------- 渲染：持仓 ---------- */
 function renderHoldings() {
   const a = DATA.account || {};
-  let html = secTitle("chart", "持仓总览", '股数×实时价 动态计算 · 快照 ' + esc(a.updatedAt || ""));
+  let html = secTitle("chart", "持仓总览", '股数×实时价 · 行情实时刷新');
   if (a.totalAssets) {
     html += '<div class="acct-card">'
       + '<div class="acct-top"><span>总资产（元）</span><span>实时市值 + 可用现金</span></div>'
