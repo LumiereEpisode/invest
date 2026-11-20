@@ -183,8 +183,10 @@ canvas.spark.hidden { display: none; }
 .mood-title { font-size: 10.5px; font-weight: 800; color: var(--sub); }
 .mood-val { font-size: 11.5px; font-weight: 800; }
 .mood-val.c-old { color: #1971c2; } .mood-val.c-cool { color: #2f9e44; } .mood-val.c-mid { color: #e67700; } .mood-val.c-hot { color: #e8590c; } .mood-val.c-fire { color: #e03131; }
-.mood-bar { position: relative; height: 8px; border-radius: 5px; margin-top: 8px; background: linear-gradient(90deg, #a5d8ff, #69db7c, #ffec99, #ffc078, #ff8787); }
-.mood-bar u { position: absolute; top: -4px; width: 3px; height: 16px; border-radius: 2px; background: var(--ink); transform: translateX(-50%); box-shadow: 0 0 0 2px rgba(255,255,255,.65); }
+.mood-bar { position: relative; height: 12px; border-radius: 6px; margin-top: 9px; background: linear-gradient(90deg, #a5d8ff, #69db7c, #ffec99, #ffc078, #ff8787); }
+.mood-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.65); }
+.mood-bar u { position: absolute; top: -6px; width: 4px; height: 24px; border-radius: 2px; background: var(--ink); transform: translateX(-50%); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
+.mood-bar u::after { content: ""; position: absolute; top: -5px; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top: 6px solid var(--ink); border-bottom: none; }
 .mood-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--sub); margin-top: 5px; font-weight: 700; }
 .mood-parts { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 7px; font-size: 9.5px; color: var(--sub); font-weight: 600; }
 .mood-parts span { background: rgba(127,140,170,.12); border-radius: 6px; padding: 2px 7px; }
@@ -1340,79 +1342,79 @@ const EMBEDDED = {
   },
   "recommendations": [
     {
-      "code": "002463",
-      "name": "沪电股份",
-      "netBuy": 4.57,
-      "chg": -10,
-      "tor": 4.34,
-      "close": 73.98,
-      "date": "2026-11-16",
-      "why": "日跌幅偏离值达到7%的前5只证券",
+      "code": "605488",
+      "name": "福莱新材",
+      "netBuy": 4.26,
+      "chg": -6.27,
+      "tor": 10.4,
+      "close": 41.24,
+      "date": "2026-11-19",
+      "why": "非S证券连续三个交易日内收盘价格跌幅偏离值累计达到20%的证券",
       "source": "东方财富龙虎榜",
       "status": "游资/机构净买入活跃"
     },
     {
-      "code": "688183",
-      "name": "生益电子",
-      "netBuy": 3.68,
-      "chg": 18.53,
-      "tor": 4.0,
-      "close": 70.95,
-      "date": "2026-11-18",
-      "why": "有价格涨跌幅限制的日收盘价格涨幅达到15%的前五只证券",
-      "source": "东方财富龙虎榜",
-      "status": "游资/机构净买入活跃"
-    },
-    {
-      "code": "002916",
-      "name": "深南电路",
-      "netBuy": 3.2,
-      "chg": 10,
-      "tor": 2.07,
-      "close": 201.19,
-      "date": "2026-11-18",
+      "code": "000678",
+      "name": "襄阳轴承",
+      "netBuy": 1.93,
+      "chg": 9.99,
+      "tor": 32.73,
+      "close": 16.74,
+      "date": "2026-11-19",
       "why": "日涨幅偏离值达到7%的前5只证券",
       "source": "东方财富龙虎榜",
       "status": "游资/机构净买入活跃"
     },
     {
-      "code": "600410",
-      "name": "华胜天成",
-      "netBuy": 2.98,
-      "chg": 10.01,
-      "tor": 19.03,
-      "close": 16.82,
-      "date": "2026-11-18",
-      "why": "非S证券连续三个交易日内收盘价格涨幅偏离值累计达到20%的证券",
+      "code": "000158",
+      "name": "常山北明",
+      "netBuy": 1.65,
+      "chg": 4.83,
+      "tor": 10.92,
+      "close": 13.03,
+      "date": "2026-11-19",
+      "why": "连续三个交易日内，涨幅偏离值累计达到20%的证券",
       "source": "东方财富龙虎榜",
       "status": "游资/机构净买入活跃"
     },
     {
-      "code": "300324",
-      "name": "旋极信息",
-      "netBuy": 2.93,
-      "chg": 20,
-      "tor": 18.51,
-      "close": 4.44,
-      "date": "2026-11-18",
-      "why": "日涨幅达到15%的前5只证券",
-      "source": "东方财富龙虎榜",
-      "status": "游资/机构净买入活跃"
-    },
-    {
-      "code": "600206",
-      "name": "有研新材",
-      "netBuy": 2.62,
-      "chg": 10.01,
-      "tor": 14.51,
-      "close": 39.33,
-      "date": "2026-11-17",
+      "code": "600619",
+      "name": "海立股份",
+      "netBuy": 1.2,
+      "chg": 10,
+      "tor": 14.3,
+      "close": 15.07,
+      "date": "2026-11-19",
       "why": "有价格涨跌幅限制的日收盘价格涨幅偏离值达到7%的前五只证券",
+      "source": "东方财富龙虎榜",
+      "status": "游资/机构净买入活跃"
+    },
+    {
+      "code": "002242",
+      "name": "九阳股份",
+      "netBuy": 1.06,
+      "chg": 10.01,
+      "tor": 23.74,
+      "close": 31.21,
+      "date": "2026-11-19",
+      "why": "日振幅值达到15%的前5只证券",
+      "source": "东方财富龙虎榜",
+      "status": "游资/机构净买入活跃"
+    },
+    {
+      "code": "002579",
+      "name": "中京电子",
+      "netBuy": 1.05,
+      "chg": 10.04,
+      "tor": 13.33,
+      "close": 12.17,
+      "date": "2026-11-19",
+      "why": "日涨幅偏离值达到7%的前5只证券",
       "source": "东方财富龙虎榜",
       "status": "游资/机构净买入活跃"
     }
   ],
-  "updatedAt": "2026-11-19 15:24"
+  "updatedAt": "2026-11-20 10:18"
 };
 
 let DATA = EMBEDDED;
@@ -1755,10 +1757,10 @@ function renderOnsite() {
 /* 情绪指示器：热度 0-100 映射为五档情绪 */
 function moodInfo(h) {
   const x = Math.max(0, Math.min(100, Math.round(h || 0)));
-  if (x < 20) return { label: "冰点 · 恐慌", emoji: "🥶", cls: "c-old" };
-  if (x < 40) return { label: "偏冷 · 低迷", emoji: "😐", cls: "c-cool" };
+  if (x < 15) return { label: "冰点 · 恐慌", emoji: "🥶", cls: "c-old" };
+  if (x < 35) return { label: "偏冷 · 低迷", emoji: "😐", cls: "c-cool" };
   if (x < 60) return { label: "中性 · 观望", emoji: "🙂", cls: "c-mid" };
-  if (x < 80) return { label: "偏热 · 活跃", emoji: "🔥", cls: "c-hot" };
+  if (x < 85) return { label: "偏热 · 活跃", emoji: "🔥", cls: "c-hot" };
   return { label: "过热 · 警惕追高", emoji: "🚨", cls: "c-fire" };
 }
 function taHTML(ta) {
@@ -1772,8 +1774,8 @@ function taHTML(ta) {
   const hp = ta.heatParts || {};
   html += '<div class="mood-box"><div class="mood-head"><span class="mood-title">🌡️ 市场情绪</span>'
     + '<b class="mood-val ' + mood.cls + '">' + mood.emoji + ' ' + mood.label + ' · ' + (ta.heat || 0) + '/100</b></div>'
-    + '<div class="mood-bar"><u style="left:' + Math.max(2, Math.min(98, ta.heat || 0)) + '%"></u></div>'
-    + '<div class="mood-scale"><span>0 冰点</span><span>20 偏冷</span><span>40 中性</span><span>60 偏热</span><span>80 过热</span></div>'
+    + '<div class="mood-bar"><s class="mood-tick" style="left:15%"></s><s class="mood-tick" style="left:35%"></s><s class="mood-tick" style="left:60%"></s><s class="mood-tick" style="left:85%"></s><u style="left:' + Math.max(1.5, Math.min(98.5, ta.heat || 0)) + '%"></u></div>'
+    + '<div class="mood-scale"><span>0 冰点</span><span>15 偏冷</span><span>35 中性</span><span>60 偏热</span><span>85 过热</span></div>'
     + '<div class="mood-parts">'
     + '<span>当日涨幅 ' + (isFinite(hp.pctv) ? sign(hp.pctv) : "—") + '% → ' + (hp.pct || 0) + '</span>'
     + '<span>20日趋势 ' + (isFinite(hp.pct20) ? sign(hp.pct20) : "—") + '% → ' + (hp.trend || 0) + '</span>'
@@ -1896,10 +1898,10 @@ function computeTA(key, secid, bars, curPrice) {
   const vrb = q && isFinite(q.vr) && q.vr > 0 ? q.vr : volRatio;
   const pctv = q && isFinite(q.pct) ? q.pct : (bars[last].close / bars[last - 1].close - 1) * 100;
   const pct20 = closes[last - 20] > 0 ? (price / closes[last - 20] - 1) * 100 : 0;
-  const hPct = Math.min(100, Math.abs(pctv) * 8);            // 当日涨幅：±5% 满半，±10% 封顶
-  const hTrend = Math.min(100, Math.max(0, pct20) * 3);      // 20日趋势：累计涨 33% 封顶
-  const hTor = Math.min(100, tor * 12);                      // 换手率：8% 封顶
-  const hVr = Math.min(100, vrb * 40);                       // 量比：2.5 封顶
+  const hPct = Math.min(100, Math.abs(pctv) * 14);           // 当日涨幅：±3.5% 封顶（v3.3.2 再校准）
+  const hTrend = Math.min(100, Math.max(0, pct20) * 5);      // 20日趋势：累计涨 20% 封顶
+  const hTor = Math.min(100, tor * 18);                      // 换手率：5.5% 封顶
+  const hVr = Math.min(100, vrb * 42);                       // 量比：2.4 封顶
   const heat = Math.max(0, Math.min(100, Math.round(hPct * 0.3 + hTrend * 0.25 + hTor * 0.25 + hVr * 0.2)));
   // 基本面参考：股息率 + 估值分位（来自东财 datacenter 每日入库）
   const meta = stockMeta(secid);
@@ -1937,7 +1939,7 @@ function stockMeta(secid) {
   if (it) out.div = it.dividendYield || it.divYield || it.dividend || null;
   return out;
 }
-const TA_SCHEMA = 4;          // 缓存结构版本，旧结构直接作废（v4: 热度分项校准）
+const TA_SCHEMA = 5;          // 缓存结构版本，旧结构直接作废（v4: 热度分项校准）
 const TA_FRESH_MS = 30 * 60 * 1000;
 function taValid(ta) { return ta && ta.schema === TA_SCHEMA && Array.isArray(ta.closes) && ta.closes.length > 1 && ta.sell1 > 0; }
 function taCacheGet(key) {
