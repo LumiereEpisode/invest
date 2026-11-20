@@ -1537,15 +1537,15 @@ const FUT_SECIDS = ["101.GC00Y", "102.CL00Y", "112.B00Y", "109.LCPT"];
 
 /* ---------- 用户自选（本地增删） ---------- */
 function myWatch() { try { return JSON.parse(localStorage.getItem("pp_mywatch") || "[]"); } catch (e) { return []; } }
-function saveMyWatch(list) { try { localStorage.setItem("pp_mywatch", JSON.stringify(list)); } catch (e) {} }
+function saveMyWatch(list) { try { localStorage.setItem("pp_mywatch", JSON.stringify(list)); markDirty(); } catch (e) {} }
 function hiddenList() { try { return JSON.parse(localStorage.getItem("pp_hidden") || "[]"); } catch (e) { return []; } }
 /* 持仓股数/成本 本地编辑覆盖 */
 function holdEdit() { try { return JSON.parse(localStorage.getItem("pp_holdedit") || "{}"); } catch (e) { return {}; } }
-function saveHoldEdit(o) { try { localStorage.setItem("pp_holdedit", JSON.stringify(o)); } catch (e) {} }
+function saveHoldEdit(o) { try { localStorage.setItem("pp_holdedit", JSON.stringify(o)); markDirty(); } catch (e) {} }
 function holdAdd() { try { return JSON.parse(localStorage.getItem("pp_holdadd") || "[]"); } catch (e) { return []; } }
-function saveHoldAdd(l) { try { localStorage.setItem("pp_holdadd", JSON.stringify(l)); } catch (e) {} }
+function saveHoldAdd(l) { try { localStorage.setItem("pp_holdadd", JSON.stringify(l)); markDirty(); } catch (e) {} }
 function holdRemoved() { try { return JSON.parse(localStorage.getItem("pp_holdremove") || "[]"); } catch (e) { return []; } }
-function saveHoldRemoved(l) { try { localStorage.setItem("pp_holdremove", JSON.stringify(l)); } catch (e) {} }
+function saveHoldRemoved(l) { try { localStorage.setItem("pp_holdremove", JSON.stringify(l)); markDirty(); } catch (e) {} }
 function allHoldings() { const rm = holdRemoved(); return (DATA.holdings || []).filter(h => !rm.includes(h.code)).concat(holdAdd()); }
 function effHold(h) {
   const o = (h.code && holdEdit()[h.code]) || {};
@@ -1573,7 +1573,7 @@ function wireHoldEdit() {
     inp.addEventListener("change", () => {
       const val = parseFloat(inp.value);
       if (!isFinite(val) || val < 0) { toast("请输入不小于 0 的金额"); return; }
-      try { localStorage.setItem("pp_cash", String(val)); } catch (e) {}
+      try { localStorage.setItem("pp_cash", String(val)); markDirty(); } catch (e) {}
       patchAccount();
       toast("现金已入账 · 总资产 = 实时市值 + 现金");
     });
@@ -2281,6 +2281,26 @@ function renderGuide() {
   const curTheme = loadTheme();
   const list = snaps();
   let html = secTitle("person", "我的平台");
+  /* 账号与云同步卡 */
+  const cfg = cloudEnabled();
+  html += '<div class="card"><h4 class="block-t" style="margin-top:0">👤 账号与云同步</h4>';
+  if (!cfg) {
+    html += '<div class="hint" style="margin-bottom:0">当前为<b>单机模式</b>：持仓/自选/现金等保存在本机浏览器，换设备不同步。配置云服务后，注册登录即可在所有设备自动互通。</div>';
+  } else if (!CLOUD_USER) {
+    html += '<div class="hint">注册或登录后，你的持仓明细、删除记录、自选池、现金、成本/股数、主题色都会<b>按账号云端保存</b>——换手机、换电脑登录同一账号，数据自动一致。未登录时修改仍实时保存在本机。</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      + '<input id="ac-email" class="hin" style="flex:2;min-width:160px" type="email" placeholder="邮箱" autocomplete="email">'
+      + '<input id="ac-pass" class="hin" style="flex:1;min-width:120px" type="password" placeholder="密码（≥6位）" autocomplete="current-password">'
+      + '<button class="mini-btn" id="ac-login">登录</button><button class="mini-btn" id="ac-signup">注册</button></div>';
+  } else {
+    let ls = "—"; try { ls = localStorage.getItem("pp_lastsync") || "—"; } catch (e) {}
+    html += '<div class="sc-grid" style="grid-template-columns:1fr 1fr">'
+      + '<div><i>登录账号</i><b>' + esc(CLOUD_USER.email || "") + '</b></div>'
+      + '<div><i>上次同步</i><b>' + esc(ls) + '</b></div></div>'
+      + '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="mini-btn" id="ac-sync">↻ 立即同步</button><button class="mini-btn" id="ac-logout">退出登录</button></div>'
+      + '<div class="hint" style="margin:8px 0 0">本机与云端自动双向同步：任一设备改动约 4 秒后上云，其他设备登录即拉取。</div>';
+  }
+  html += '</div>';
   html += '<div class="card"><h4 class="block-t" style="margin-top:0">✏️ 持仓数据维护（免传图）</h4>'
     + '<div class="hint">到「持仓」板块，每只股票卡片上的 <b>成本价和股数</b> 都可以直接点击输入框修改，改完点别处即保存——市值/盈亏自动按实时价重算，<b>不需要再上传截图</b>。加减仓后改一下股数即可；成本价建议填加权后的新成本。数据保存在本机浏览器。</div></div>';
   html += '<div class="card" style="margin-top:12px"><h4 class="block-t" style="margin-top:0">🎨 主题颜色</h4>'
@@ -2323,7 +2343,7 @@ function loadTheme() {
   return t;
 }
 function setTheme(id) {
-  try { localStorage.setItem("pp_theme", id); } catch (e) {}
+  try { localStorage.setItem("pp_theme", id); markDirty(); } catch (e) {}
   document.body.dataset.theme = id === "aurora" ? "" : id;
   document.querySelectorAll(".theme-dot").forEach(d => d.classList.toggle("on", d.dataset.theme === id));
   toast("主题已切换 · " + (THEMES.find(x => x.id === id) || {}).label);
@@ -2340,13 +2360,13 @@ function renderAll() {
   const hic = $("#hero-ic"); if (hic && !hic.firstChild) hic.innerHTML = ico("rocket");
   $("#main").innerHTML = (RENDERERS[active] || renderHoldings)();
   polishIcons($("#main"));
-  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.2.1";
+  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.3";
   const m = DATA.meta || {};
   $("#foot").textContent = m.disclaimer || "仅供参考，不构成投资建议。市场有风险，投资需谨慎。";
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.id === active));
   if (active === "holdings") wireHoldEdit();
   if (active === "onsite") { wireSearch(); scheduleAllTA(); setTimeout(drawAllSparks, 60); }
-  if (active === "guide") { wireUpload(); wireTheme(); }
+  if (active === "guide") { wireUpload(); wireTheme(); wireCloud(); }
   livePatch();
 }
 
@@ -2413,7 +2433,7 @@ document.addEventListener("click", e => {
     } else {
       const h = hiddenList();
       h.push(code);
-      try { localStorage.setItem("pp_hidden", JSON.stringify(h)); } catch (err) {}
+      try { localStorage.setItem("pp_hidden", JSON.stringify(h)); markDirty(); } catch (err) {}
       toast("已隐藏 " + code);
     }
     renderAll();
@@ -2706,6 +2726,119 @@ async function fetchRecs(manual) {
   }
 }
 
+/* ---------- 账号与云同步（Supabase：邮箱注册，每用户独立数据） ---------- */
+const SYNC_KEYS = ["pp_holdedit", "pp_holdadd", "pp_holdremove", "pp_cash", "pp_mywatch", "pp_hidden", "pp_theme"];
+const SUPA_URL = "";   // ← 填 Supabase 项目 URL 后启用云同步（也可在控制台设 pp_supa_url）
+const SUPA_KEY = "";   // ← 填 Supabase anon public key
+let SUPA = null, CLOUD_USER = null, _pushTimer = null, _applyingCloud = false;
+function cloudEnabled() {
+  let u = SUPA_URL, k = SUPA_KEY;
+  try { u = u || localStorage.getItem("pp_supa_url") || ""; k = k || localStorage.getItem("pp_supa_key") || ""; } catch (e) {}
+  return (u && k) ? { url: u, key: k } : null;
+}
+function loadSupaLib() {
+  return new Promise(resolve => {
+    if (window.supabase) return resolve(true);
+    let n = 0;
+    const urls = ["https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js", "https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"];
+    const tryNext = () => {
+      if (n >= urls.length) return resolve(false);
+      const s = document.createElement("script");
+      s.src = urls[n++];
+      s.onload = () => resolve(!!window.supabase);
+      s.onerror = () => { try { s.remove(); } catch (e) {} tryNext(); };
+      document.body.appendChild(s);
+    };
+    tryNext();
+  });
+}
+function renderIfGuide() { if (typeof active !== "undefined" && active === "guide") renderAll(); }
+async function initCloud() {
+  const cfg = cloudEnabled();
+  if (!cfg) return;
+  const ok = await loadSupaLib();
+  if (!ok || !window.supabase) return;
+  SUPA = window.supabase.createClient(cfg.url, cfg.key);
+  try {
+    const { data } = await SUPA.auth.getSession();
+    CLOUD_USER = (data && data.session && data.session.user) || null;
+    if (CLOUD_USER) await cloudPull();
+    else renderIfGuide();
+    SUPA.auth.onAuthStateChange((ev, session) => {
+      CLOUD_USER = session ? session.user : null;
+      if (CLOUD_USER) cloudPull(); else renderIfGuide();
+    });
+  } catch (e) { /* 云不可用时保持纯本地模式 */ }
+}
+function cloudPayload() {
+  const p = {};
+  SYNC_KEYS.forEach(k => { try { const v = localStorage.getItem(k); if (v != null) p[k] = v; } catch (e) {} });
+  return p;
+}
+async function cloudPull() {
+  if (!SUPA || !CLOUD_USER) return;
+  try {
+    const { data, error } = await SUPA.from("user_data").select("payload").eq("uid", CLOUD_USER.id).maybeSingle();
+    if (error) throw error;
+    if (data && data.payload) {
+      _applyingCloud = true;
+      Object.keys(data.payload).forEach(k => { try { localStorage.setItem(k, data.payload[k]); } catch (e) {} });
+      _applyingCloud = false;
+      rebuildCodeLists(); renderAll();
+      toast("☁ 已同步云端数据 · " + (CLOUD_USER.email || ""));
+    } else {
+      await cloudPush();
+      toast("☁ 账号就绪，本机数据已上云");
+    }
+    renderIfGuide();
+  } catch (e) { toast("云同步失败：" + (e.message || "未知错误")); }
+}
+async function cloudPush() {
+  if (!SUPA || !CLOUD_USER) return;
+  try {
+    await SUPA.from("user_data").upsert({ uid: CLOUD_USER.id, payload: cloudPayload(), updated_at: new Date().toISOString() });
+    try { localStorage.setItem("pp_lastsync", new Date().toLocaleString("zh-CN", { hour12: false })); } catch (e) {}
+    renderIfGuide();
+  } catch (e) { /* 静默失败，下次改动自动重推 */ }
+}
+function markDirty() {
+  if (!SUPA || !CLOUD_USER || _applyingCloud) return;
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(cloudPush, 4000);
+}
+async function cloudAuth(mode, email, pass) {
+  const cfg = cloudEnabled();
+  if (!cfg) { toast("云同步未配置"); return; }
+  if (!SUPA) {
+    const ok = await loadSupaLib();
+    if (!ok) { toast("云组件加载失败，请检查网络"); return; }
+    SUPA = window.supabase.createClient(cfg.url, cfg.key);
+  }
+  try {
+    if (mode === "signup") {
+      const { data, error } = await SUPA.auth.signUp({ email, password: pass });
+      if (error) throw error;
+      if (data && data.session) { toast("注册成功，本机数据正在上云…"); }
+      else toast("注册成功！请到邮箱点击验证链接，验证后重新登录");
+    } else {
+      const { error } = await SUPA.auth.signInWithPassword({ email, password: pass });
+      if (error) throw error;
+      toast("登录成功，正在同步云端数据…");
+    }
+  } catch (e) { toast((mode === "signup" ? "注册失败" : "登录失败") + "：" + (e.message || "")); }
+}
+function wireCloud() {
+  const get = id => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
+  const su = document.getElementById("ac-signup");
+  if (su) su.onclick = () => { const em = get("ac-email"), pw = get("ac-pass"); if (!/^\S+@\S+\.\S+$/.test(em)) { toast("请输入有效邮箱"); return; } if (pw.length < 6) { toast("密码至少 6 位"); return; } cloudAuth("signup", em, pw); };
+  const li = document.getElementById("ac-login");
+  if (li) li.onclick = () => { const em = get("ac-email"), pw = get("ac-pass"); if (!em || !pw) { toast("请输入邮箱和密码"); return; } cloudAuth("login", em, pw); };
+  const sy = document.getElementById("ac-sync");
+  if (sy) sy.onclick = () => cloudPull();
+  const lo = document.getElementById("ac-logout");
+  if (lo) lo.onclick = async () => { if (SUPA) { await SUPA.auth.signOut(); CLOUD_USER = null; renderAll(); toast("已退出登录（数据保留在本机）"); } };
+}
+
 /* ---------- 静态数据拉取（每日存档） ---------- */
 async function pull(manual) {
   if (!isHttp) { if (manual) toast("本地文件模式：行情与快讯仍实时，存档数据用内置快照"); return; }
@@ -2735,7 +2868,7 @@ renderAll();
 setInterval(pollTencent, 1000);
 setInterval(pollEM, 1000);
 setInterval(pollNews, 3000);
-pollTencent(); pollEM(); pollNews(); fetchRecs(false);
+pollTencent(); pollEM(); pollNews(); fetchRecs(false); initCloud();
 window.addEventListener("resize", () => { if (active === "onsite") drawAllSparks(); });
 window.addEventListener("load", () => drawAllSparks());
 document.addEventListener("visibilitychange", () => { if (!document.hidden && active === "onsite") drawAllSparks(); });
