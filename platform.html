@@ -255,7 +255,7 @@ canvas.spark.hidden { display: none; }
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" data-page-node-id="xGFYgqV7oH9jMdZyX8mjoe"><path d="M21 12a9 9 0 1 1-2.64-6.36" data-page-node-id="hBe73NudmhhNFvRhh78zHc"/><path d="M21 3v6h-6" data-page-node-id="hN9vtuZTIAjMVDc3I2pN67"/></svg>
     </button>
   </div>
-  <div class="hero-sub" id="hero-sub" data-page-node-id="uTl5iFZZTjmJrJCxThFmcl">行情实时刷新 · 买点自动分析 · v3.0</div>
+  <div class="hero-sub" id="hero-sub" data-page-node-id="uTl5iFZZTjmJrJCxThFmcl">行情实时刷新 · 买点自动分析 · v3.3.4</div>
   <div class="hero-wave" data-page-node-id="3H3kWH9BDGiEKr4Hcec1XT"></div>
 </header>
 <main id="main" data-page-node-id="KiEPEICxic2hByIQG5GwxT"><div class="empty" data-page-node-id="QOtvUaaBv3lGSM30f1tiL3">加载中…</div></main>
@@ -274,7 +274,7 @@ const EMBEDDED = {
     }
   },
   "meta": {
-    "version": "3.0",
+    "version": "3.3.4",
     "updatedAt": "2026-11-19 15:40",
     "disclaimer": "本平台所有内容基于公开数据和量化分析，仅供参考，不构成投资建议。市场有风险，投资需谨慎。"
   },
@@ -1972,6 +1972,7 @@ function stockMeta(secid) {
   if (it) out.div = it.dividendYield || it.divYield || it.dividend || null;
   return out;
 }
+const APP_VER = "v3.3.4";     // 平台版本号，「我的」板块展示用（不再依赖数据文件 meta）
 const TA_SCHEMA = 5;          // 缓存结构版本，旧结构直接作废（v4: 热度分项校准）
 const TA_FRESH_MS = 30 * 60 * 1000;
 function taValid(ta) { return ta && ta.schema === TA_SCHEMA && Array.isArray(ta.closes) && ta.closes.length > 1 && ta.sell1 > 0; }
@@ -2553,7 +2554,7 @@ function renderGuide() {
     + '</div><div style="height:18px"></div>'
     + '<div class="hint" style="margin-bottom:0">点击色球即时切换全局主题（毛玻璃背景与强调色同步变化），选择保存在本机。</div></div>';
   html += '<div class="card" style="margin-top:12px"><div class="sc-grid" style="grid-template-columns:1fr 1fr">'
-    + '<div><i>数据版本</i><b>v' + esc(m.version || "3.0") + '</b></div>'
+    + '<div><i>平台版本</i><b>' + APP_VER + '</b></div>'
     + '<div><i>每日数据更新时间</i><b>' + esc(m.updatedAt || "—") + '</b></div>'
     + '<div><i>实时行情</i><b>腾讯 + 东方财富双源</b></div>'
     + '<div><i>买点引擎</i><b>自动分析 · 无需输入</b></div>'
@@ -2604,7 +2605,7 @@ function renderAll() {
   const hic = $("#hero-ic"); if (hic && !hic.firstChild) hic.innerHTML = ico("rocket");
   $("#main").innerHTML = (RENDERERS[active] || renderHoldings)();
   polishIcons($("#main"));
-  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · v3.3.4";
+  $("#hero-sub").textContent = (SECTIONS.find(s => s.id === active) || {}).label + " · 行情实时刷新 · 买点自动分析 · " + APP_VER;
   const m = DATA.meta || {};
   $("#foot").textContent = m.disclaimer || "仅供参考，不构成投资建议。市场有风险，投资需谨慎。";
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.id === active));
