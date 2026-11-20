@@ -1,5 +1,5 @@
 /* Service Worker：静态资源缓存优先，数据文件网络优先（保证信息流最新） */
-var CACHE = "tyan-v35";
+var CACHE = "tyan-v36";
 var STATIC = [
   "platform.html", "index.html", "data/data.js",
   "manifest.json", "assets/icon-192.png", "assets/icon-512.png"
